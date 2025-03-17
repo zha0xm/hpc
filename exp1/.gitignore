@@ -30,3 +30,6 @@
 *.exe
 *.out
 *.app
+
+mpi_async
+mpi_sync
