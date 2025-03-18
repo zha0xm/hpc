@@ -33,3 +33,5 @@
 
 mpi_async
 mpi_sync
+
+*.pdf
