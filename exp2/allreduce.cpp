@@ -13,6 +13,39 @@ namespace ch = std::chrono;
 void Ring_Allreduce(void* sendbuf, void* recvbuf, int n, MPI_Comm comm, int comm_sz, int my_rank)
 {
     //TODO
+    // step 1: Reduce-scatter
+    int chunk_size = n / comm_sz;
+    float* tempbuf = new float[chunk_size];
+    memcpy(recvbuf, sendbuf, sizeof(float) * n);
+
+    for (int i = 0; i < comm_sz - 1; i++) {
+        int send_rank = (my_rank + 1) % comm_sz;
+        int recv_rank = (my_rank - 1 + comm_sz) % comm_sz;
+
+        void* send_addr = sendbuf + (my_rank - i + comm_sz) * chunk_size % comm_sz;
+        void* recv_addr = recvbuf + (my_rank - 1 - i + comm_sz) * chunk_size % comm_sz;
+
+        MPI_Sendrecv(send_addr, chunk_size, MPI_FLOAT, send_rank, my_rank,
+                    tempbuf, chunk_size, MPI_FLOAT, recv_rank, recv_rank,
+                    comm, MPI_STATUS_IGNORE);
+
+        for (int i = 0; i < chunk_size; i++) {
+            recv_addr[i] += tempbuf[i];
+        }
+    }
+
+    // step 2: Allgather
+    for (int i = 0; i < comm_sz - 1; i++) {
+        int send_rank = (my_rank + 1) % comm_sz;
+        int recv_rank = (my_rank - 1 + comm_sz) % comm_sz;
+
+        void* send_addr = recvbuf + (my_rank - i + 1 + comm_sz) % comm_sz;
+        void* recv_addr = recvbuf + (my_rank - i + comm_sz) % comm_sz;
+
+        MPI_Sendrecv(send_addr, chunk_size, MPI_FLOAT, send_rank, my_rank,
+                    recv_addr, chunk_size, MPI_FLOAT, recv_rank, recv_rank,
+                    comm, MPI_STATUS_IGNORE);
+    }
 }
 
 
