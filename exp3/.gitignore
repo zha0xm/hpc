@@ -1,0 +1,10 @@
+omp_sched.cpp
+
+*.pdf
+*.tex
+*.synctex
+*.synctex(busy)
+*.synctex.gz
+*.synctex.gz(busy)
+*.log
+*.aux
