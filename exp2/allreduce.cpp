@@ -39,7 +39,7 @@ void Ring_Allreduce(void* sendbuf, void* recvbuf, int n, MPI_Comm comm, int comm
         int send_rank = (my_rank + 1) % comm_sz;
         int recv_rank = (my_rank - 1 + comm_sz) % comm_sz;
 
-        float* send_addr = (float*)recvbuf + ((my_rank - i + 1 + comm_sz) % comm_s) * chunk_size;
+        float* send_addr = (float*)recvbuf + ((my_rank - i + 1 + comm_sz) % comm_sz) * chunk_size;
         float* recv_addr = (float*)recvbuf + ((my_rank - i + comm_sz) % comm_sz) * chunk_size;
 
         MPI_Sendrecv(send_addr, chunk_size, MPI_FLOAT, send_rank, my_rank,
