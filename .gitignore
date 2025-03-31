@@ -4,7 +4,7 @@ openmp_pow
 mpi_async
 mpi_sync
 
-addreduce
+allreduce
 
 omp_sched
 
