@@ -17,6 +17,8 @@ omp_sched
 *.synctex.gz(busy)
 *.log
 *.aux
+*.fdb_latexmk
+*.fls
 
 
 # Prerequisites
