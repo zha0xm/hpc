@@ -8,6 +8,8 @@ allreduce
 
 omp_sched
 
+*.py
+*.png
 
 *.pdf
 *.tex
