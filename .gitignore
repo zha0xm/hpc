@@ -8,6 +8,8 @@ allreduce
 
 omp_sched
 
+run_cuda
+
 *.py
 *.png
 
