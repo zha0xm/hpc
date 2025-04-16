@@ -10,6 +10,8 @@ omp_sched
 
 run_cuda
 
+aplusb
+
 *.py
 *.png
 
