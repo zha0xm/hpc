@@ -12,6 +12,9 @@ run_cuda
 
 aplusb
 
+odd_even_sort
+generate
+
 *.py
 *.png
 
