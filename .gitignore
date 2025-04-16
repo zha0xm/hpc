@@ -15,6 +15,8 @@ aplusb
 odd_even_sort
 generate
 
+*.dat
+
 *.py
 *.png
 
