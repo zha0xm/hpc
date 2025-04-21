@@ -15,6 +15,9 @@ aplusb
 odd_even_sort
 generate
 
+# exp6
+test_gmem
+test_smem
 *.dat
 
 *.py
