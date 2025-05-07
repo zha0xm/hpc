@@ -20,6 +20,9 @@ test_gmem
 test_smem
 *.dat
 
+# PA2
+benchmark
+
 *.py
 *.png
 
