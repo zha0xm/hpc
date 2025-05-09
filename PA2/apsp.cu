@@ -4,6 +4,8 @@
 
 #include "apsp.h"
 
+#define B 32
+
 __global__ void step_1(int n, int *graph, int p, int B) {
     extern __shared__ int block[];
 
@@ -29,16 +31,17 @@ __global__ void step_1(int n, int *graph, int p, int B) {
 }
 
 
-__global__ void step_2(int n, int *graph, int p, int B, bool is_row) {
+__global__ void step_2(int n, int *graph, int p, int B) {
     extern __shared__ int shared[];
 
     int* pivot = shared;              // G(p, p)
     int* target = &shared[B * B];     // 待处理的块
 
-    int tx = threadIdx.x;
-    int ty = threadIdx.y;
+   const int tx = threadIdx.x;
+    const int ty = threadIdx.y;
 
-    int q = blockIdx.x;
+    const int q  = blockIdx.x;             // 目标块序号
+    const bool is_row = (blockIdx.y == 0);
 
     // 跳过对角块
     if (q == p) return;
@@ -129,8 +132,7 @@ void apsp(int n, /* device */ int* graph) {
     for (int p = 0; p < num_blocks; ++p) {
         step_1<<<1, dim3(B, B), B * B * sizeof(int)>>>(n, graph, p, B);
         
-        step_2<<<num_blocks, dim3(B, B), 2 * B * B * sizeof(int)>>>(n, graph, p, B, true);   // 行块
-        step_2<<<num_blocks, dim3(B, B), 2 * B * B * sizeof(int)>>>(n, graph, p, B, false);  // 列块
+        step_2<<<dim(num_blocks, 2), dim3(B, B), 2 * B * B * sizeof(int)>>>(n, graph, p, B);
 
         dim3 grid(num_blocks, num_blocks);
         step_3<<<grid, dim3(B, B), 3 * B * B * sizeof(int)>>>(n, graph, p, B);
