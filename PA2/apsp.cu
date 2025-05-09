@@ -15,21 +15,34 @@ __global__ void step_1(int n, int *graph, int p) {
     int i = p * B + ty;
     int j = p * B + tx;
 
-    // 处理边界块
-    block[ty * B + tx] = (i < n && j < n) ? graph[i * n + j] : 100001;
-
+    // 加载共享内存
+    int idx = ty * B + tx;
+    block[idx] = (i < n && j < n) ? graph[i * n + j] : 100001;
     __syncthreads();
 
+    // 每个线程负责一个元素：block[ty][tx]
+    // 优化：提前加载一整行和一整列到寄存器
+    int reg_row[B];  // 当前线程处理的 row（ty）
+    int reg_col[B];  // 当前线程处理的 col（tx）
+
 #pragma unroll
-    // Floyd-Warshall
     for (int k = 0; k < B; ++k) {
-        int temp = block[ty * B + k] + block[k * B + tx];
-        if (temp < block[ty * B + tx]) block[ty * B + tx] = temp;
-        // __syncthreads();
+        reg_row[k] = block[ty * B + k];  // 第 ty 行
+        reg_col[k] = block[k * B + tx];  // 第 tx 列
     }
 
-    if (i < n && j < n) graph[i * n + j] = block[ty * B + tx];
+    int self = block[idx];
+
+#pragma unroll
+    for (int k = 0; k < B; ++k) {
+        int temp = reg_row[k] + reg_col[k];
+        if (temp < self) self = temp;
+    }
+
+    if (i < n && j < n)
+        graph[i * n + j] = self;
 }
+
 
 
 __global__ void step_2(int n, int *graph, int p) {
