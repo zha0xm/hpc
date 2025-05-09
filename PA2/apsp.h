@@ -13,7 +13,7 @@
  *                graph[i * n + j] = distance from i to j.
  *                IN DEVICE MEMORY
  */
-void apsp(int n, /* device */ int *graph);
+void apsp(int n, /* device */ int *graph, cudaStream_t stream);
 
 /**
  * All-Pairs Shortest Path (Reference for validation)
