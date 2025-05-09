@@ -4,8 +4,9 @@
 
 #include "apsp.h"
 
+#define B 32
 
-__global__ void step_1(int n, int *graph, int p, int B) {
+__global__ void step_1(int n, int *graph, int p) {
     extern __shared__ int block[];
 
     int tx = threadIdx.x;
@@ -19,6 +20,7 @@ __global__ void step_1(int n, int *graph, int p, int B) {
 
     __syncthreads();
 
+#pragma unroll
     // Floyd-Warshall
     for (int k = 0; k < B; ++k) {
         int temp = block[ty * B + k] + block[k * B + tx];
@@ -30,13 +32,13 @@ __global__ void step_1(int n, int *graph, int p, int B) {
 }
 
 
-__global__ void step_2(int n, int *graph, int p, int B) {
+__global__ void step_2(int n, int *graph, int p) {
     extern __shared__ int shared[];
 
     int* pivot = shared;              // G(p, p)
     int* target = &shared[B * B];     // 待处理的块
 
-   const int tx = threadIdx.x;
+    const int tx = threadIdx.x;
     const int ty = threadIdx.y;
 
     const int q  = blockIdx.x;             // 目标块序号
@@ -65,6 +67,7 @@ __global__ void step_2(int n, int *graph, int p, int B) {
 
     __syncthreads();
 
+#pragma unroll
     for (int k = 0; k < B; ++k) {
         int temp;
         if (is_row) temp = pivot[ty * B + k] + target[k * B + tx];
@@ -79,7 +82,7 @@ __global__ void step_2(int n, int *graph, int p, int B) {
 }
 
 
-__global__ void step_3(int n, int* graph, int p, int B) {
+__global__ void step_3(int n, int* graph, int p) {
     extern __shared__ int shared[];
 
     int* blockA = shared;                // G(i, p)
@@ -109,6 +112,7 @@ __global__ void step_3(int n, int* graph, int p, int B) {
 
     __syncthreads();
 
+#pragma unroll
     for (int k = 0; k < B; ++k) {
         int temp = blockA[ty * B + k] + blockB[k * B + tx];
         if (temp < blockC[ty * B + tx]) {
@@ -125,7 +129,7 @@ __global__ void step_3(int n, int* graph, int p, int B) {
 
 
 void apsp(int n, /* device */ int* graph) {
-    const int B = 32;
+    // const int B = 32;
     const int num_blocks = (n + B - 1) / B;
     
     for (int p = 0; p < num_blocks; ++p) {
