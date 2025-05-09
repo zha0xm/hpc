@@ -4,7 +4,6 @@
 
 #include "apsp.h"
 
-#define B 32
 
 __global__ void step_1(int n, int *graph, int p, int B) {
     extern __shared__ int block[];
