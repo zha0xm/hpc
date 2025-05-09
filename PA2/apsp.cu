@@ -15,13 +15,10 @@ __global__ void step_1(int n, int *graph, int p) {
     int i = p * B + ty;
     int j = p * B + tx;
 
-    // 加载共享内存
     int idx = ty * B + tx;
     block[idx] = (i < n && j < n) ? graph[i * n + j] : 100001;
     __syncthreads();
 
-    // 每个线程负责一个元素：block[ty][tx]
-    // 优化：提前加载一整行和一整列到寄存器
     int reg_row[B];  // 当前线程处理的 row（ty）
     int reg_col[B];  // 当前线程处理的 col（tx）
 
@@ -68,19 +65,14 @@ __global__ void step_2(int n, int *graph, int p) {
         j = p * B + tx;
     }
 
-    // Load pivot block into shared memory
     int pi = p * B + ty;
     int pj = p * B + tx;
     pivot[ty * B + tx] = (pi < n && pj < n) ? graph[pi * n + pj] : 100001;
-
-    // Load target block into shared memory
     target[ty * B + tx] = (i < n && j < n) ? graph[i * n + j] : 100001;
-
     __syncthreads();
 
     int result = target[ty * B + tx];
 
-    // 注册优化部分
     if (is_row) {
         int row_k[B];
         int pivot_row[B];
