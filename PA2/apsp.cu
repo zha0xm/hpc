@@ -132,7 +132,7 @@ void apsp(int n, /* device */ int* graph) {
     for (int p = 0; p < num_blocks; ++p) {
         step_1<<<1, dim3(B, B), B * B * sizeof(int)>>>(n, graph, p, B);
         
-        step_2<<<dim(num_blocks, 2), dim3(B, B), 2 * B * B * sizeof(int)>>>(n, graph, p, B);
+        step_2<<<dim3(num_blocks, 2), dim3(B, B), 2 * B * B * sizeof(int)>>>(n, graph, p, B);
 
         dim3 grid(num_blocks, num_blocks);
         step_3<<<grid, dim3(B, B), 3 * B * B * sizeof(int)>>>(n, graph, p, B);
