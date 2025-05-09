@@ -22,7 +22,7 @@ __global__ void step_1(int n, int *graph, int p, int B) {
     for (int k = 0; k < B; ++k) {
         int temp = block[ty * B + k] + block[k * B + tx];
         if (temp < block[ty * B + tx]) block[ty * B + tx] = temp;
-        __syncthreads();
+        // __syncthreads();
     }
 
     if (i < n && j < n) graph[i * n + j] = block[ty * B + tx];
@@ -70,7 +70,7 @@ __global__ void step_2(int n, int *graph, int p, int B, bool is_row) {
 
         if (temp < target[ty * B + tx]) target[ty * B + tx] = temp;
 
-        __syncthreads();
+        // __syncthreads();
     }
 
     if (i < n && j < n) graph[i * n + j] = target[ty * B + tx];
@@ -112,7 +112,7 @@ __global__ void step_3(int n, int* graph, int p, int B) {
         if (temp < blockC[ty * B + tx]) {
             blockC[ty * B + tx] = temp;
         }
-        __syncthreads();
+        // __syncthreads();
     }
 
     if (row < n && col < n) {
