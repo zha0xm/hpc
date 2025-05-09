@@ -49,50 +49,72 @@ __global__ void step_2(int n, int *graph, int p) {
     extern __shared__ int shared[];
 
     int* pivot = shared;              // G(p, p)
-    int* target = &shared[B * B];     // 待处理的块
+    int* target = &shared[B * B];     // G(p, q) 或 G(q, p)
 
     const int tx = threadIdx.x;
     const int ty = threadIdx.y;
 
-    const int q  = blockIdx.x;             // 目标块序号
+    const int q = blockIdx.x;
     const bool is_row = (blockIdx.y == 0);
 
-    // 跳过对角块
     if (q == p) return;
 
     int i, j;
     if (is_row) {
         i = p * B + ty;
         j = q * B + tx;
-    }
-    else {
+    } else {
         i = q * B + ty;
         j = p * B + tx;
     }
 
-    // 读 G(p,p)
+    // Load pivot block into shared memory
     int pi = p * B + ty;
     int pj = p * B + tx;
     pivot[ty * B + tx] = (pi < n && pj < n) ? graph[pi * n + pj] : 100001;
 
-    // 读取 target block
+    // Load target block into shared memory
     target[ty * B + tx] = (i < n && j < n) ? graph[i * n + j] : 100001;
 
     __syncthreads();
 
+    int result = target[ty * B + tx];
+
+    // 注册优化部分
+    if (is_row) {
+        int row_k[B];
+        int pivot_row[B];
 #pragma unroll
-    for (int k = 0; k < B; ++k) {
-        int temp;
-        if (is_row) temp = pivot[ty * B + k] + target[k * B + tx];
-        else    temp = target[ty * B + k] + pivot[k * B + tx];
+        for (int k = 0; k < B; ++k) {
+            pivot_row[k] = pivot[ty * B + k];    // 第 ty 行
+            row_k[k] = target[k * B + tx];       // 同列元素
+        }
 
-        if (temp < target[ty * B + tx]) target[ty * B + tx] = temp;
+#pragma unroll
+        for (int k = 0; k < B; ++k) {
+            int temp = pivot_row[k] + row_k[k];
+            if (temp < result) result = temp;
+        }
+    } else {
+        int col_k[B];
+        int pivot_col[B];
+#pragma unroll
+        for (int k = 0; k < B; ++k) {
+            pivot_col[k] = pivot[k * B + tx];    // 第 tx 列
+            col_k[k] = target[ty * B + k];       // 同行元素
+        }
 
-        // __syncthreads();
+#pragma unroll
+        for (int k = 0; k < B; ++k) {
+            int temp = col_k[k] + pivot_col[k];
+            if (temp < result) result = temp;
+        }
     }
 
-    if (i < n && j < n) graph[i * n + j] = target[ty * B + tx];
+    if (i < n && j < n)
+        graph[i * n + j] = result;
 }
+
 
 
 __global__ void step_3(int n, int* graph, int p) {
@@ -125,20 +147,27 @@ __global__ void step_3(int n, int* graph, int p) {
 
     __syncthreads();
 
+    int result = blockC[ty * B + tx];
+
+    int regA[B];
+    int regB[B];
+
 #pragma unroll
     for (int k = 0; k < B; ++k) {
-        int temp = blockA[ty * B + k] + blockB[k * B + tx];
-        if (temp < blockC[ty * B + tx]) {
-            blockC[ty * B + tx] = temp;
-        }
-        // __syncthreads();
+        regA[k] = blockA[ty * B + k];  // 同一行
+        regB[k] = blockB[k * B + tx];  // 同一列
+    }
+
+#pragma unroll
+    for (int k = 0; k < B; ++k) {
+        int temp = regA[k] + regB[k];
+        if (temp < result) result = temp;
     }
 
     if (row < n && col < n) {
-        graph[row * n + col] = blockC[ty * B + tx];
+        graph[row * n + col] = result;
     }
 }
-
 
 
 void apsp(int n, /* device */ int* graph) {
