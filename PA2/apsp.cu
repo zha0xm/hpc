@@ -137,7 +137,7 @@ __global__ void k_outer(int *g, int n, int p)
 //----------------------------------------------------------------------------//
 void apsp(int n, /*device*/ int *g)
 {
-    cudaStream_t stream = 0
+    cudaStream_t stream = 0;
     const dim3 threads(B, B);
 
     // grid0 只有一个 block
