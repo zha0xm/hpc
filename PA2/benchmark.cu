@@ -88,6 +88,22 @@ int main(int argc, char **argv) {
     }
     t /= TIMER_ROUNDS;
 
+    double t_ref = 0;
+    for (int i = 0; i < TIMER_ROUNDS; i++) {
+        namespace ch = std::chrono;
+        copyGraph(n, result, data);
+        auto beg = ch::high_resolution_clock::now();
+        apspRef(n, result);
+        auto err = cudaDeviceSynchronize();
+        auto end = ch::high_resolution_clock::now();
+        if (err != cudaSuccess) {
+            fprintf(stderr, "CUDA Error\n");
+            exit(-1);
+        }
+        t_ref += ch::duration_cast<ch::duration<double>>(end - beg).count() * 1000; // ms
+    }
+    t_ref /= TIMER_ROUNDS;
+
     int *ref = allocGraph(n);
     copyGraph(n, ref, data);
     apspRef(n, ref);
@@ -107,5 +123,6 @@ int main(int argc, char **argv) {
     }
 
     printf("Time: %f ms\n", t);
+    printf("Time: %f ms\n", t_ref);
 }
 
