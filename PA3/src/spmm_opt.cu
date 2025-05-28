@@ -1,65 +1,83 @@
+/**********************************************************************
+ *  spmm_opt.cu  —— one-kernel version (row × feature-tile 2-D grid)
+ *********************************************************************/
 #include <cuda_runtime.h>
 #include "spmm_opt.h"
 
+/* ---------- 可调常量 ---------- */
 #define WARP_SIZE 32
-#define TILE_NNZ  256
+#define TILE_NNZ  256          /* shared-mem tile size for (idx,val) */
 
-__global__ void spmm_shared_tile_kernel(int *ptr, int *idx, float *val, float *vin, float *vout, int num_v, int INFEATURE)
+/* ------------------------------------------------------------------ */
+/*  Kernel：blockDim.x = 32 (1 warp) ;  grid = (ceil(F/32), num_v)    */
+/* ------------------------------------------------------------------ */
+__global__ void spmm_kernel(const int   *__restrict__ ptr,
+                            const int   *__restrict__ idx,
+                            const float *__restrict__ val,
+                            const float *__restrict__ vin,
+                            float       *__restrict__ vout,
+                            int num_rows,
+                            int in_feat)
 {
+    /* -------- shared memory 缓存本行的 (idx,val) -------- */
     __shared__ int   s_idx[TILE_NNZ];
     __shared__ float s_val[TILE_NNZ];
 
-    int row  = blockIdx.x;
-    if (row >= num_v) return;
+    /* -------- 行号、特征号计算 -------- */
+    const int row  = blockIdx.y;
+    if (row >= num_rows) return;
 
-    int lane = threadIdx.x;
+    const int feat = blockIdx.x * WARP_SIZE + threadIdx.x;
+    if (feat >= in_feat) return;              /* 网格已确保越界线程极少 */
 
-    int row_beg = ptr[row];
-    int row_end = ptr[row + 1];
-    int nnz     = row_end - row_beg;
+    /* -------- 本行 CSR 范围 -------- */
+    const int row_beg = ptr[row];
+    const int nnz     = ptr[row + 1] - row_beg;
 
-#pragma unroll
-    for (int f = lane; f < INFEATURE; f += WARP_SIZE) {
-        vout[row * INFEATURE + f] = 0.0f;
-    }
+    float acc = 0.f;
 
-    for (int tile_base = 0; tile_base < nnz; tile_base += TILE_NNZ) {
+    /* -------- 分批把 (idx,val) 搬进 shared memory -------- */
+    for (int base = 0; base < nnz; base += TILE_NNZ) {
+        int tile_e = (nnz - base < TILE_NNZ) ? (nnz - base) : TILE_NNZ;
 
-        int tile_e = (nnz - tile_base) < TILE_NNZ ? (nnz - tile_base) : TILE_NNZ;
-
-        for (int t = lane; t < tile_e; t += WARP_SIZE) {
-            int g_e  = row_beg + tile_base + t;
-            s_idx[t] = idx[g_e];
-            s_val[t] = val[g_e];
+        /* stride-copy：warp 32 线程协作加载 */
+        for (int t = threadIdx.x; t < tile_e; t += WARP_SIZE) {
+            int e = row_beg + base + t;
+            s_idx[t] = idx[e];
+            s_val[t] = val[e];
         }
         __syncthreads();
 
 #pragma unroll
-        for (int f = lane; f < INFEATURE; f += WARP_SIZE) {
+        for (int t = 0; t < tile_e; ++t)
+            acc = fmaf(__ldg(&vin[s_idx[t] * in_feat + feat]),  // 输入
+                       s_val[t],                                // 权重
+                       acc);                                    // FMA
 
-            float acc = vout[row * INFEATURE + f];
-
-#pragma unroll
-            for (int t = 0; t < tile_e; ++t) {
-                acc = fmaf(__ldg(&vin[s_idx[t] * INFEATURE + f]), s_val[t], acc);
-            }
-
-            vout[row * INFEATURE + f] = acc;
-        }
         __syncthreads();
     }
+
+    vout[row * in_feat + feat] = acc;
 }
 
-
+/* ------------------------------------------------------------------ */
+/*  SpMMOpt::preprocess  &  run                                       */
+/* ------------------------------------------------------------------ */
 void SpMMOpt::preprocess(float*, float*)
 {
+    /* 1 warp / CTA                                                      */
     block = dim3(WARP_SIZE, 1, 1);
-    grid  = dim3(num_v, 1, 1);
+
+    /* 2-D grid：x = feature tiles，y = 行                               */
+    grid  = dim3((feat_in + WARP_SIZE - 1) / WARP_SIZE,  /* tile 数   */
+                 num_v,                                   /* 行数     */
+                 1);
+
+    /* 若 num_v 或 grid.x 超过 65 535，可改用 3-D grid，或把行切块。 */
 }
 
 void SpMMOpt::run(float *vin, float *vout)
 {
-    spmm_shared_tile_kernel<<<grid, block>>>(
+    spmm_kernel<<<grid, block>>>(
         d_ptr, d_idx, d_val, vin, vout, num_v, feat_in);
 }
-
