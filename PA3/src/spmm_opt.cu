@@ -11,13 +11,7 @@
 /* ------------------------------------------------------------------ */
 /*  Kernel：blockDim.x = 32 (1 warp) ;  grid = (ceil(F/32), num_v)    */
 /* ------------------------------------------------------------------ */
-__global__ void spmm_kernel(const int   *__restrict__ ptr,
-                            const int   *__restrict__ idx,
-                            const float *__restrict__ val,
-                            const float *__restrict__ vin,
-                            float       *__restrict__ vout,
-                            int num_rows,
-                            int in_feat)
+__global__ void spmm_kernel(int *ptr, int *idx, float *val, float *vin, float *vout, int num_v, int INFEATURE)
 {
     /* -------- shared memory 缓存本行的 (idx,val) -------- */
     __shared__ int   s_idx[TILE_NNZ];
@@ -25,10 +19,10 @@ __global__ void spmm_kernel(const int   *__restrict__ ptr,
 
     /* -------- 行号、特征号计算 -------- */
     const int row  = blockIdx.y;
-    if (row >= num_rows) return;
+    if (row >= num_v) return;
 
     const int feat = blockIdx.x * WARP_SIZE + threadIdx.x;
-    if (feat >= in_feat) return;              /* 网格已确保越界线程极少 */
+    if (feat >= INFEATURE) return;              /* 网格已确保越界线程极少 */
 
     /* -------- 本行 CSR 范围 -------- */
     const int row_beg = ptr[row];
@@ -50,14 +44,14 @@ __global__ void spmm_kernel(const int   *__restrict__ ptr,
 
 #pragma unroll
         for (int t = 0; t < tile_e; ++t)
-            acc = fmaf(__ldg(&vin[s_idx[t] * in_feat + feat]),  // 输入
+            acc = fmaf(__ldg(&vin[s_idx[t] * INFEATURE + feat]),  // 输入
                        s_val[t],                                // 权重
                        acc);                                    // FMA
 
         __syncthreads();
     }
 
-    vout[row * in_feat + feat] = acc;
+    vout[row * INFEATURE + feat] = acc;
 }
 
 /* ------------------------------------------------------------------ */
