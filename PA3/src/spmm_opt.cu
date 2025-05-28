@@ -18,7 +18,7 @@ __global__ void spmm_shared_tile_kernel(int *ptr, int *idx, float *val, float *v
     int row_end = ptr[row + 1];
     int nnz     = row_end - row_beg;
 
-    #pragma unroll
+#pragma unroll
     for (int f = lane; f < INFEATURE; f += WARP_SIZE) {
         vout[row * INFEATURE + f] = 0.0f;
     }
@@ -34,12 +34,12 @@ __global__ void spmm_shared_tile_kernel(int *ptr, int *idx, float *val, float *v
         }
         __syncthreads();
 
-        #pragma unroll
+#pragma unroll
         for (int f = lane; f < INFEATURE; f += WARP_SIZE) {
 
             float acc = vout[row * INFEATURE + f];
 
-            #pragma unroll
+#pragma unroll
             for (int t = 0; t < tile_e; ++t) {
                 acc = fmaf(__ldg(&vin[s_idx[t] * INFEATURE + f]), s_val[t], acc);
             }
@@ -53,8 +53,8 @@ __global__ void spmm_shared_tile_kernel(int *ptr, int *idx, float *val, float *v
 
 void SpMMOpt::preprocess(float*, float*)
 {
-    dim3 block(32, 1, 1);            // 一个 warp
-    dim3 grid( (INFEATURE+31)/32, num_v );
+    block = dim3(WARP_SIZE, 1, 1);
+    grid  = dim3(num_v, 1, 1);
 }
 
 void SpMMOpt::run(float *vin, float *vout)
