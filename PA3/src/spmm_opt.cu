@@ -1,57 +1,43 @@
 #include "spmm_opt.h"
-#include <vector>
 
-// 设备端 eid -> row 映射表
-__device__ __managed__ int* eid_to_row = nullptr;
-
-__global__ void spmm_kernel_atomic(
-    int* idx, float* val,
-    float* vin, float* vout,
-    int* eid_to_row,
-    int num_e, int feat_in)
+__global__ void spmm_warp_per_row(const int   *__restrict__ ptr,
+                                  const int   *__restrict__ idx,
+                                  const float *__restrict__ val,
+                                  const float *__restrict__ vin,
+                                  float       *__restrict__ vout,
+                                  int num_rows, int in_feat)
 {
-    int eid = blockIdx.x * blockDim.x + threadIdx.x;
-    if (eid >= num_e) return;
+    const int row   = blockIdx.x;           // 1 block 对应 1 行
+    if (row >= num_rows) return;
 
-    int row = eid_to_row[eid];
-    int col = idx[eid];
-    float a_val = val[eid];
+    const int lane  = threadIdx.x;          // 0-31
+    const int row_start = ptr[row];
+    const int row_end   = ptr[row + 1];
 
-    for (int j = 0; j < feat_in; ++j) {
-        float contrib = a_val * vin[col * feat_in + j];
-        atomicAdd(&vout[row * feat_in + j], contrib);
-    }
-}
+    // 寄存器累加器：每个线程负责 in_feat 中第 lane, lane+32, lane+64... 的列
+    for (int f = lane; f < in_feat; f += 32) {
+        float acc = 0.f;
 
-void SpMMOpt::preprocess(float* vin, float* vout)
-{
-    // 设置 grid / block 大小
-    int BLOCK_SIZE = 256;
-    grid.x = (num_e + BLOCK_SIZE - 1) / BLOCK_SIZE;
-    block.x = BLOCK_SIZE;
-
-    // 从 device 端取 ptr 数组（注意此处假设 ptr 已经在 host 有副本）
-    std::vector<int> h_ptr(num_v + 1);
-    checkCudaErrors(cudaMemcpy(h_ptr.data(), d_ptr, sizeof(int) * (num_v + 1), cudaMemcpyDeviceToHost));
-
-    // 构建 eid -> row 映射
-    std::vector<int> h_eid_to_row(num_e);
-    for (int row = 0; row < num_v; ++row) {
-        for (int i = h_ptr[row]; i < h_ptr[row + 1]; ++i) {
-            h_eid_to_row[i] = row;
+        // 遍历该行所有非零
+        for (int e = row_start; e < row_end; ++e) {
+            int   col = idx[e];
+            float w   = val[e];
+            acc += __ldg(&vin[col * in_feat + f]) * w;   // coalesced
         }
+        vout[row * in_feat + f] = acc;
     }
-
-    // 拷贝到 device
-    checkCudaErrors(cudaMalloc((void**)&eid_to_row, sizeof(int) * num_e));
-    checkCudaErrors(cudaMemcpy(eid_to_row, h_eid_to_row.data(), sizeof(int) * num_e, cudaMemcpyHostToDevice));
 }
 
-void SpMMOpt::run(float* vin, float* vout)
+void SpMMOpt::preprocess(float *vin, float *vout)
 {
-    spmm_kernel_atomic<<<grid, block>>>(
-        d_idx, d_val,
-        vin, vout,
-        eid_to_row,
-        num_e, feat_in);
+    dim3 block(32);                     // 固定 32 threads = 1 warp
+    dim3 grid(num_v);                   // 一个 block 对应一行
+    this->block = block;
+    this->grid  = grid;
+}
+
+void SpMMOpt::run(float *vin, float *vout)
+{
+    spmm_warp_per_row<<<grid, block>>>(d_ptr, d_idx, d_val,
+                                       vin, vout, num_v, feat_in);
 }
