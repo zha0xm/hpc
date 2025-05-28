@@ -1,12 +1,20 @@
-/******************************************************************************
- *  可调常量 —— 如需改动直接改 #define 即可                               *
- ******************************************************************************/
-#define WARP_SIZE   32          // 固定一个 warp
-#define TILE_NNZ    256         // 每次搬进 shared memory 的非零数
+// =========  常量定义一定要放在最前面  =========
+#ifndef WARP_SIZE
+#define WARP_SIZE 32          // 一个 warp 的大小
+#endif
 
-/******************************************************************************
- *  每个 block / warp 对应 1 行；把 (idx,val) 分批拷到 shared memory          *
- ******************************************************************************/
+#ifndef TILE_NNZ
+#define TILE_NNZ 256          // 每次搬进 shared memory 的非零数
+#endif
+// =============================================
+
+#include <cuda_runtime.h>     // 保证 __ldg() 有声明
+#include "spmm_opt.h"
+
+/*----------------------------------------------------------
+ *  每个 block (=1 warp=32 线程) 处理 1 行
+ *  把 (idx,val) 分批缓存进 shared memory
+ *---------------------------------------------------------*/
 __global__ void spmm_shared_tile_kernel(const int   *__restrict__ ptr,
                                         const int   *__restrict__ idx,
                                         const float *__restrict__ val,
@@ -15,43 +23,44 @@ __global__ void spmm_shared_tile_kernel(const int   *__restrict__ ptr,
                                         int   num_rows,
                                         int   in_feat)
 {
+    /* -------- static shared memory -------- */
     __shared__ int   s_idx[TILE_NNZ];
     __shared__ float s_val[TILE_NNZ];
 
     const int row  = blockIdx.x;      // 一行一个 block
     if (row >= num_rows) return;
 
-    const int lane = threadIdx.x;     // 0–31  (一个 warp)
+    const int lane = threadIdx.x;     // 0–31
 
     const int row_start = ptr[row];
     const int row_end   = ptr[row + 1];
     const int nnz       = row_end - row_start;
 
     /* ---------- 初始化本行输出 ---------- */
+#pragma unroll 4
     for (int f = lane; f < in_feat; f += WARP_SIZE)
         vout[row * in_feat + f] = 0.0f;
 
-    /* ---------- 分批把 (idx,val) 搬进 shared memory ---------- */
+    /* ---------- 分批缓存 (idx,val) 并计算 ---------- */
     for (int tile_base = 0; tile_base < nnz; tile_base += TILE_NNZ)
     {
-        int local_e = tile_base + lane;          // warp 中每线程拷 1 edge
+        int local_e = tile_base + lane;          // warp 每线程搬 1 edge
         if (local_e < nnz)
         {
             int g_e = row_start + local_e;
             s_idx[local_e - tile_base] = idx[g_e];
             s_val[local_e - tile_base] = val[g_e];
         }
-        __syncthreads();                         // 共享内存就绪
+        __syncthreads();                         // 等待共享内存写完
 
         int tile_e_end = min(TILE_NNZ, nnz - tile_base);
 
-        /* ---------- 计算：重用已缓存的 edges ---------- */
-#pragma unroll                                // 展开 feature 循环步长 4
+#pragma unroll 4                                // 展开 feature 循环
         for (int f = lane; f < in_feat; f += WARP_SIZE)
         {
-            float acc = vout[row * in_feat + f]; // 取寄存器中间结果
+            float acc = vout[row * in_feat + f]; // 取寄存器累加器
 
-#pragma unroll                              // 展开 tile 内 edge 循环
+#pragma unroll 4                                // 展开 tile 内 edge 循环
             for (int t = 0; t < tile_e_end; ++t)
             {
                 int   col = s_idx[t];
@@ -64,13 +73,12 @@ __global__ void spmm_shared_tile_kernel(const int   *__restrict__ ptr,
     }
 }
 
+/*------------------- SpMMOpt 成员函数 -------------------*/
 void SpMMOpt::preprocess(float *vin, float *vout)
 {
-    /* 一个 block = 一个 warp = 32 线程 */
-    block = dim3(WARP_SIZE, 1, 1);
-
-    /* 一行一个 block；如行数 > 65535，改成 2D grid */
-    grid  = dim3(num_v, 1, 1);
+    block = dim3(WARP_SIZE, 1, 1);   // 32 threads = 1 warp
+    grid  = dim3(num_v, 1, 1);       // 一行一个 block
+    // 若 num_v > 65535，可用 2D grid：grid.x = 65535, grid.y = ...
 }
 
 void SpMMOpt::run(float *vin, float *vout)
