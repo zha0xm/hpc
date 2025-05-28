@@ -23,6 +23,9 @@ test_smem
 # PA2
 benchmark
 
+#PA3
+build
+
 *.py
 *.png
 
