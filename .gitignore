@@ -28,6 +28,7 @@ build
 
 #exp8
 main
+*.json
 
 *.py
 *.png
